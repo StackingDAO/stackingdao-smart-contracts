@@ -82,3 +82,4 @@ A Clarinet + vitest simnet project with example tests, for integrators and secur
 ## Security
 
 See [SECURITY.md](SECURITY.md) for scope, audits, governance controls, and responsible disclosure.
+
