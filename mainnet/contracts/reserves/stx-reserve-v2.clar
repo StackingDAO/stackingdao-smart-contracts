@@ -86,6 +86,18 @@
 (define-public (lock-stx-for-withdrawal (stx-amount uint))
   (begin
     (try! (contract-call? .dao check-is-protocol contract-caller))
+
+    ;; Solvency invariant: the reserve's total STX must cover every claim on it after
+    ;; this lock - pending stSTX withdrawals, pending stSTXbtc withdrawals and the STX
+    ;; backing non-escrowed stSTXbtc. Without this check `stx-for-withdrawals-ststx`
+    ;; could be driven above what the reserve can ever pay, silently invalidating every
+    ;; downstream guard that treats `get-stx-available` as trustworthy.
+    (asserts! (>= (get-total-stx)
+                  (+ (+ (var-get stx-for-withdrawals-ststx) stx-amount)
+                     (+ (var-get stx-for-withdrawals-ststxbtc)
+                        (get-stx-for-ststxbtc))))
+              ERR_RESERVED)
+
     (var-set stx-for-withdrawals-ststx (+ (var-get stx-for-withdrawals-ststx) stx-amount))
     (print { action: "lock-stx-for-withdrawal", data: { stx-amount: stx-amount, block-height: stacks-block-height } })
     (ok stx-amount)
@@ -119,6 +131,23 @@
 (define-public (lock-stx-for-withdrawal-ststxbtc (stx-amount uint))
   (begin
     (try! (contract-call? .dao check-is-protocol contract-caller))
+
+    ;; Solvency invariant for the stSTXbtc withdrawal queue. Escrowing `stx-amount`
+    ;; stSTXbtc moves value between two claims at once: `stx-for-ststxbtc` falls by
+    ;; `stx-amount` (the escrow fold reads the core's token balance) while
+    ;; `stx-for-withdrawals-ststxbtc` rises by the same amount, so their sum is
+    ;; unchanged. Requiring that sum to stay covered by `get-total-stx` is therefore
+    ;; both necessary and sufficient, and it is what makes every downstream guard
+    ;; (the exchange rate, `pay-stx-from-idle-ststxbtc`, `return-stx-from-staking-split`)
+    ;; sound.
+    ;; `stx-amount <= active stSTXbtc supply` is guaranteed by the FT transfer in
+    ;; `core-ststxbtc-v2.init-withdraw`, so this can never reject a valid withdrawal.
+    (asserts! (>= (get-total-stx)
+                  (+ (+ (var-get stx-for-withdrawals-ststx)
+                        (var-get stx-for-withdrawals-ststxbtc))
+                     (get-stx-for-ststxbtc)))
+              ERR_RESERVED)
+
     (var-set stx-for-withdrawals-ststxbtc (+ (var-get stx-for-withdrawals-ststxbtc) stx-amount))
     (print { action: "lock-stx-for-withdrawal-ststxbtc", data: { stx-amount: stx-amount, block-height: stacks-block-height } })
     (ok stx-amount)
@@ -247,7 +276,13 @@
 
 (define-public (return-stx-from-staking-split (ststx-amount uint) (ststxbtc-amount uint))
   (let (
-    (earmark (get-stx-for-ststxbtc))
+    ;; The stSTXbtc earmark must be the *full* STX the stSTXbtc side is owed, i.e. the
+    ;; backing of non-escrowed stSTXbtc *plus* the STX already locked for pending
+    ;; stSTXbtc withdrawals. Escrowed stSTXbtc is excluded from `get-stx-for-ststxbtc`
+    ;; but its STX is still owed to the withdrawal NFT holder, so omitting
+    ;; `stx-for-withdrawals-ststxbtc` here would cap `staked-ststxbtc` below what the
+    ;; queue needs and leave those withdrawals permanently unfundable.
+    (earmark (+ (get-stx-for-ststxbtc) (var-get stx-for-withdrawals-ststxbtc)))
     (idle (var-get stx-for-ststxbtc-idle))
     (staked-ststxbtc (if (> earmark idle) (- earmark idle) u0))
     (staking (var-get stx-staking))
