@@ -41,13 +41,19 @@ liquid `idle` counter; the earmark follows the supply change).
 `data-stx-v2.get-stx-per-ststx()` — no arguments, **bare uint** — is:
 
 ```
-active-backing = get-total-stx − get-stx-for-ststxbtc − get-stx-for-withdrawals
+active-backing = get-total-stx − get-stx-for-ststxbtc
+                 − get-stx-for-withdrawals − get-stx-for-withdrawals-ststxbtc
 active-supply  = ststx-token.total-supply − data-stx-v2.get-pending-shares
 rate           = active-backing × 1e6 / active-supply     (u1e6 if active-supply == 0)
 ```
 
 The rate counts **only** the STX backing *active* stSTX: it excludes the STX backing
-stSTXbtc, the STX reserved for withdrawals, and any shares that are mid-withdrawal.
+stSTXbtc, the STX reserved for withdrawals of **both** STX tokens, and any shares that
+are mid-withdrawal. `get-stx-for-withdrawals-ststxbtc` must be subtracted alongside
+`get-stx-for-ststxbtc`, because `core-ststxbtc-v2.init-withdraw` escrows the caller's
+stSTXbtc (lowering `get-stx-for-ststxbtc`) *and* earmarks the matching STX in
+`stx-for-withdrawals-ststxbtc`. Omitting the second term leaves the earmarked STX
+counted as active stSTX backing and inflates the rate for the whole cooldown window.
 `get-stx-per-ststx-up` is the same, rounded up (used when minting, so the protocol never
 mints more than it should).
 

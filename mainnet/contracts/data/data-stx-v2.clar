@@ -28,12 +28,24 @@
 (define-read-only (get-live-escrow)
   (fold add-core-balance (var-get escrow-cores) u0))
 
+;; The stSTX exchange rate must count as "claimed" every slice of STX that does not
+;; back *active* stSTX. That is:
+;;   1. `stx-for-ststxbtc`            - STX backing non-escrowed stSTXbtc (1:1 with supply).
+;;   2. `stx-for-withdrawals`         - STX locked for pending stSTX withdrawals.
+;;   3. `stx-for-withdrawals-ststxbtc`- STX locked for pending stSTXbtc withdrawals.
+;;
+;; (3) is mandatory: `core-ststxbtc-v2.init-withdraw` escrows the caller's stSTXbtc
+;; (which lowers `stx-for-ststxbtc` via the escrow fold) *and* earmarks the matching
+;; STX in `stx-for-withdrawals-ststxbtc`. Both effects must be netted out, otherwise
+;; the earmarked STX is still counted as active stSTX backing and the rate is inflated
+;; by `stx-for-withdrawals-ststxbtc / active-supply` for the whole cooldown window.
 (define-private (compute-ratio (round-up bool))
   (let (
     (total-stx (contract-call? .stx-reserve-v2 get-total-stx))
     (stx-for-ststxbtc (contract-call? .stx-reserve-v2 get-stx-for-ststxbtc))
     (stx-for-withdrawals (contract-call? .stx-reserve-v2 get-stx-for-withdrawals))
-    (claimed (+ stx-for-ststxbtc stx-for-withdrawals))
+    (stx-for-withdrawals-ststxbtc (contract-call? .stx-reserve-v2 get-stx-for-withdrawals-ststxbtc))
+    (claimed (+ (+ stx-for-ststxbtc stx-for-withdrawals) stx-for-withdrawals-ststxbtc))
     (active-backing (if (> total-stx claimed) (- total-stx claimed) u0))
     (ststx-supply (unwrap-panic (contract-call? .ststx-token get-total-supply)))
     (escrow (get-live-escrow))

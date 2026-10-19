@@ -51,6 +51,22 @@
   )
 )
 
+;; Schedule a withdrawal of `ststxbtc-amount` stSTXbtc for STX, redeemable after the
+;; cooldown via `withdraw`.
+;;
+;; stSTXbtc is 1:1 with STX by construction (see `deposit` / `withdraw-idle`), so the
+;; STX earmarked here is exactly `ststxbtc-amount`.
+;;
+;; Two accounting effects must stay in lockstep, both inside `stx-reserve-v2`:
+;;   1. `lock-stx-for-withdrawal-ststxbtc` raises `stx-for-withdrawals-ststxbtc` by
+;;      `ststxbtc-amount` - the STX is now spoken for.
+;;   2. the `transfer` below moves the tokens into this contract, which raises the
+;;      reserve's escrow fold and therefore *lowers* `get-stx-for-ststxbtc` by the
+;;      same amount.
+;; Net claim on the reserve is unchanged. `stx-reserve-v2` asserts that net claim is
+;; covered by `get-total-stx` before accepting the lock, and `data-stx-v2` subtracts
+;; both terms when computing the stSTX rate - so this call can never inflate the
+;; stSTX exchange rate or strand the earmarked STX.
 (define-public (init-withdraw (ststxbtc-amount uint))
   (let (
     (sender tx-sender)
