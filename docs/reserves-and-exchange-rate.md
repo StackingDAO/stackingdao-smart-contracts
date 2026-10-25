@@ -42,7 +42,7 @@ liquid `idle` counter; the earmark follows the supply change).
 
 ```
 active-backing = get-total-stx − get-stx-for-ststxbtc − get-stx-for-withdrawals
-active-supply  = ststx-token.total-supply − data-stx-v2.get-pending-shares
+active-supply  = ststx-token.total-supply − data-stx-v2.get-live-escrow
 rate           = active-backing × 1e6 / active-supply     (u1e6 if active-supply == 0)
 ```
 
